@@ -10,7 +10,7 @@ namespace GraphTesting
     {
         static void Main(string[] args)
         {
-            string path = @"C:\home\FactographDatabases\GraphTesting\";
+            string path = @"D:\home\FactographDatabases\GraphTesting\";
             XElement formats = XElement.Load(path + "ApplicationProfile.xml").Element("formats");
 
             Console.WriteLine("Hello!");
