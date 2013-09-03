@@ -10,13 +10,13 @@ namespace GraphTesting
     {
         static void Main(string[] args)
         {
-            string path = @"D:\home\dev2010\GraphTesting\";
+            string path = @"C:\home\FactographDatabases\GraphTesting\";
             XElement formats = XElement.Load(path + "ApplicationProfile.xml").Element("formats");
 
             Console.WriteLine("Hello!");
-            Graph gr = new Graph(@"D:\home\FactographDatabases\GraphTesting\");
+            Graph gr = new Graph(path);
             
-            gr.Load(new string[] { @"D:\home\dev2010\VStore\0001.xml" });
+            gr.Load(new string[] { path + "0001.xml" });
             //Console.WriteLine("Fin.");
 
             DateTime tt0 = DateTime.Now;
