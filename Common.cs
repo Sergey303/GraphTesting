@@ -1,7 +1,6 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 
 namespace GraphTesting
 {
@@ -33,5 +32,54 @@ namespace GraphTesting
         public string d; public string lang;
         public DProp(string s, string p, string d) { this.s = s; this.p = p; this.d = d; }
         public DProp(string s, string p, string d, string l) { this.s = s; this.p = p; this.d = d; this.lang = l; }
+    }
+
+    public class TValue
+    {
+        public static Func<string, Item> ItemCtor;
+        private Item item;
+        public bool IsNewParametr;
+
+        public string Value;
+
+        public Item Item
+        {
+            get { return item ?? (item=ItemCtor(Value)); }
+            set { item = value; }
+        }
+
+        public TValue SetValue(string value, bool isOptA)
+        {
+            if (value != Value)
+            {
+                Value = value;
+                IsNewParametr = false;
+                item = null;
+            }
+            return this;
+        }
+        public void DropValue(bool isOptA)
+        {
+                IsNewParametr = true;
+        }
+    }
+
+    public class QueryTriplet
+    {
+        public TValue S, P ,O;
+    }
+
+    public class Item:Hashtable
+    {
+        public Item(Dictionary<object,Property> container)
+            :base(container)
+        {
+        }
+    }
+
+    public class Property: List<string>
+    {
+        public bool Direction;
+        //public string Name;
     }
 }

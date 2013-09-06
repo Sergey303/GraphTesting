@@ -2,9 +2,10 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 using PolarDB;
+using sema2012m;
 
 namespace GraphTesting
 {
@@ -21,12 +22,11 @@ namespace GraphTesting
 
         private void InitCells()
         {
-            if (File.Exists(path + "triplets.pac") && File.Exists(path + "graph_x.pxc"))
-            {
-                triplets = new PaCell(tp_triplets, path + "triplets.pac");
-                any_triplet = triplets.Root.Element(0);
-                graph_x = new PxCell(tp_graph, path + "graph_x.pxc");
-            }
+            if (!File.Exists(path + "triplets.pac") 
+                || !File.Exists(path + "graph_x.pxc")) return;
+            triplets = new PaCell(tp_triplets, path + "triplets.pac");
+            any_triplet = triplets.Root.Element(0);
+            graph_x = new PxCell(tp_graph, path + "graph_x.pxc");
         }
 
         // Для работы нужны первый и последний, остальные - для загрузки
@@ -46,7 +46,8 @@ namespace GraphTesting
             if (triplets != null) { triplets.Close(); triplets = null; }
             if (graph_x != null) { graph_x.Close(); graph_x = null; }
             // Создадим ячейки
-            triplets = new PaCell(tp_triplets, path + "triplets.pac", false); triplets.Clear();
+            triplets = new PaCell(tp_triplets, path + "triplets.pac", false); 
+            triplets.Clear();
             quads = new PaCell(tp_quads, path + "quads.pac", false);
             graph_a = new PaCell(tp_graph, path + "graph_a.pac", false);
             graph_x = new PxCell(tp_graph, path + "graph_x.pxc", false); graph_x.Clear();
@@ -115,8 +116,8 @@ namespace GraphTesting
             ProcessDirection(2, id, format, ein, result);
             return result;
         }
-        private string[] directions = new string[] { "field", "direct", "inverse" };
-        private int[] fields = new int[] { 3, 1, 2 };
+        private string[] directions = { "field", "direct", "inverse" };
+        private int[] fields = { 3, 1, 2 };
         private void ProcessDirection(int direction, string id, XElement format, EntityInfo ein, XElement result)
         {
             foreach (var f_el in format.Elements(directions[direction]))
@@ -217,6 +218,51 @@ namespace GraphTesting
                 }
             }
             return einfo;
+        }
+
+        public Item ToItem(string id)
+        {
+            EntityInfo ein = GetEntityInfoById(id);
+           //    int hs = property.GetHashCode();
+            Dictionary<object, Property> container=new Dictionary<object, Property>();
+            Property property;
+            for(int direction=0; direction<3; direction++)
+                foreach (long off in ein.entry.Field(fields[direction]).Elements()
+                    .SelectMany(pRec => 
+                        pRec.Field(1).Elements()
+                                      .Select(offEn => (long)offEn.Get().Value)))
+                {
+                    // Находим триплет
+                    any_triplet.offset = off;
+                    object[] tri_o = (object[])any_triplet.Get().Value;
+                    int tag = (int)tri_o[0];
+                    object[] rec = (object[])tri_o[1];
+                    // Обрабатываем только "правильные"
+                    if (direction == 0 && tag == 2 && (string) rec[0] == id)
+                    {
+                            if (!container.TryGetValue(rec[1], out property))
+                                container.Add(rec[1], property = new Property {Direction = true});
+                            property.Add((string) rec[2]);
+                    }
+                    else if (direction == 1 && tag != 1 || (string) rec[0] != id) // "direct"
+                    {
+                        if (!container.TryGetValue(rec[1], out property))
+                            container.Add(rec[1], property = new Property {Direction = true});
+                        property.Add((string)rec[2]);
+                    }
+                    else if (direction == 2 && tag != 1 || (string) rec[2] != id) // "inverse"
+                    {
+                        if (!container.TryGetValue(rec[1], out property))
+                            container.Add(rec[1], property = new Property {Direction = false});
+                        property.Add((string) rec[0]);
+                    }
+                }
+            return new Item(container);
+        }
+
+        public IEnumerable<string> GetSubjectsByProperty(string property)
+        {
+            yield break;
         }
 
         // ============ Технические методы ============
@@ -347,12 +393,11 @@ namespace GraphTesting
                 else // поле данных
                 {
                     quads.V(new object[] { hs_s, 2, hs_p, tri.Offset });
-                    if ((string)rec[1] == sema2012m.ONames.p_name)
-                    { // Поместим информацию в таблицу имен n4
-                        string name = (string)rec[2];
-                        string name4 = name.Length <= 4 ? name : name.Substring(0, 4);
-                        n4.V(new object[] { hs_s, name4.ToLower() });
-                    }
+                    if ((string) rec[1] != sema2012m.ONames.p_name) continue; 
+                    // Поместим информацию в таблицу имен n4
+                    string name = (string)rec[2];
+                    string name4 = name.Length <= 4 ? name : name.Substring(0, 4);
+                    n4.V(new object[] { hs_s, name4.ToLower() });
                 }
             }
             quads.Se();
@@ -361,7 +406,7 @@ namespace GraphTesting
             n4.EndSerialFlow();
 
             // Сортировка квадриков
-            quads.Root.Sort((object o1, object o2) =>
+            quads.Root.Sort((o1, o2) =>
             {
                 object[] v1 = (object[])o1;
                 object[] v2 = (object[])o2;
@@ -376,7 +421,7 @@ namespace GraphTesting
                     (p1 < p2 ? -1 : (p1 > p2 ? 1 : 0)))));
             });
             // Сортировка таблицы имен
-            n4.Root.Sort((object o1, object o2) =>
+            n4.Root.Sort((o1, o2) =>
             {
                 object[] v1 = (object[])o1;
                 object[] v2 = (object[])o2;
@@ -386,36 +431,43 @@ namespace GraphTesting
             });
         }
 
-        private static void TripletSerialInput(ISerialFlow sflow, string[] rdf_filenames)
+        private static void TripletSerialInput(ISerialFlow sflow, IEnumerable<string> rdf_filenames)
         {
             sflow.StartSerialFlow();
             sflow.S();
             foreach (string db_falename in rdf_filenames)
-            {
-                XElement db = XElement.Load(db_falename);
-                var query = db.Elements().Where(el => el.Attribute(sema2012m.ONames.rdfabout) != null);
-                foreach (var xelement in query)
-                {
-                    string about = xelement.Attribute(sema2012m.ONames.rdfabout).Value;
-                    sflow.V(new object[] { 1, new object[] { about, sema2012m.ONames.rdftypestring, xelement.Name.NamespaceName + xelement.Name.LocalName } });
-                    foreach (var prop in xelement.Elements())
-                    {
-                        string resource_ent = prop.Name.NamespaceName + prop.Name.LocalName;
-                        XAttribute resource = prop.Attribute(sema2012m.ONames.rdfresource);
-                        if (resource != null)
-                        {
-                            sflow.V(new object[] { 1, new object[] { about, resource_ent, resource.Value } });
-                        }
-                        else
-                        {
-                            sflow.V(new object[] { 2, new object[] { about, resource_ent, prop.Value, prop.Attribute(sema2012m.ONames.xmllang) == null ? "" : prop.Attribute(sema2012m.ONames.xmllang).Value } });
-                        }
-                    }
-                }
-            }
+                ReadXML2Quad(db_falename, (id, property, value, isObj, lang) =>
+                    sflow.V(isObj
+                        ? new object[] {1, new object[] {id, property, value}}
+                        : new object[] {2, new object[] {id, property, value, lang ?? ""}}));
             sflow.Se();
             sflow.EndSerialFlow();
         }
+        private delegate void QuadAction(string id, string property,
+             string value, bool isDirect = false, string lang = null);
+
+        private static string langAttributeName = "xml:lang",
+            rdfAbout = "rdf:about",
+               rdfResource = "rdf:resource",
+               NS = "http://fogid.net/o/";
+
+        private static void ReadXML2Quad(string url, QuadAction quadAction)
+        {
+            string resource;
+            bool isDirect;
+            string id = string.Empty;
+            using (var xml = new XmlTextReader(url))
+                while (xml.Read())
+                    if (xml.IsStartElement())
+                        if (xml.Depth == 1 && (id = xml[rdfAbout]) != null)
+                            quadAction(id, ONames.rdftypestring, NS + xml.Name);
+                        else if (xml.Depth == 2 && id != null)
+                            quadAction(id, NS + xml.Name,
+                                isDirect: isDirect = (resource = xml[rdfResource]) != null,
+                                lang: isDirect ? null : xml[langAttributeName],
+                                value: isDirect ? resource : xml.ReadString());
+        }
+
 
         private void InitTypes()
         {
@@ -458,7 +510,7 @@ namespace GraphTesting
                         new PTypeRecord(
                             new NamedType("hs_p", new PType(PTypeEnumeration.integer)),
                             new NamedType("off", new PTypeSequence(new PType(PTypeEnumeration.longinteger))))))));
-            this.tp_n4 = new PTypeSequence(new PTypeRecord(
+            tp_n4 = new PTypeSequence(new PTypeRecord(
                 new NamedType("hs_e", new PType(PTypeEnumeration.integer)),
                 new NamedType("s4", new PTypeFString(4))));
         }
